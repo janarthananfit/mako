@@ -139,7 +139,7 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 		if (load >= stats.default_first_level 
 			&& stats.now - stats.time_stamp[0] > SEC_THRESHOLD)
 		{
-			if (online_core())
+			if (online_core() == true)
 			{
 				stats.time_stamp[0] = stats.now;
 				goto end;
@@ -148,7 +148,7 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 		else if (load <= stats.default_fourth_level && cpu != 0 && 
 		stats.now - stats.time_stamp[0] > SEC_THRESHOLD)
 		{
-			if (offline_core(cpu))
+			if (offline_core(cpu) == true)
 			{
 				stats.time_stamp[0] = stats.now;
 				goto end;

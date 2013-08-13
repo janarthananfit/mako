@@ -105,6 +105,12 @@ static unsigned long above_hispeed_delay_val;
 static int input_boost_freq;
 
 /*
+ * Duration of the touch boost
+ */
+#define DEFAULT_INPUT_BOOST_FREQ_DURATION 1000
+static int input_boost_freq_duration;
+
+/*
  * dynamic tunables scaling flag linked to the
  * hotplug driver
  */
@@ -284,7 +290,8 @@ static void cpufreq_interactive_timer(unsigned long data)
 	 */
 	if (is_touching && core_boost[pcpu->policy->cpu] == true)
 	{
-		if (ktime_to_ms(ktime_get()) - freq_boosted_time >= 1000)
+		if (ktime_to_ms(ktime_get()) - 
+				freq_boosted_time >= input_boost_freq_duration)
 			is_touching = false;
 		else if (new_freq < input_boost_freq || 
 					pcpu->policy->cur < input_boost_freq)
@@ -674,7 +681,32 @@ static ssize_t store_input_boost_freq(struct kobject *kobj, struct attribute *at
 }
 
 static struct global_attr input_boost_freq_attr = __ATTR(input_boost_freq, 0644,
-                                                         show_input_boost_freq, store_input_boost_freq);
+								show_input_boost_freq, store_input_boost_freq);
+
+static ssize_t show_input_boost_freq_duration(struct kobject *kobj, struct attribute *attr,
+                                     char *buf)
+{
+	return sprintf(buf, "%d\n", input_boost_freq_duration);
+}
+
+static ssize_t store_input_boost_freq_duration(struct kobject *kobj, struct attribute *attr,
+                                      const char *buf, size_t count)
+{
+	int ret;
+	unsigned long val;
+    
+	ret = strict_strtoul(buf, 0, &val);
+	if (ret < 0)
+		return ret;
+    
+	input_boost_freq_duration = val;
+    
+	return count;
+}
+
+static struct global_attr input_boost_freq_duration_attr = 
+			__ATTR(input_boost_freq_duration, 0644,
+			show_input_boost_freq_duration, store_input_boost_freq_duration);
 
 static ssize_t show_dynamic_scaling(struct kobject *kobj,
                                     struct attribute *attr, char *buf)
@@ -707,6 +739,7 @@ static struct attribute *interactive_attributes[] = {
 	&min_sample_time_attr.attr,
 	&timer_rate_attr.attr,
 	&input_boost_freq_attr.attr,
+	&input_boost_freq_duration_attr.attr,
 	&dynamic_scaling_attr.attr,
 	&up_threshold_attr.attr,
 	NULL,
@@ -877,6 +910,7 @@ static int __init cpufreq_interactive_init(void)
 	timer_rate = DEFAULT_TIMER_RATE;
 	hispeed_freq = DEFAULT_HISPEED_FREQ;
 	input_boost_freq = DEFAULT_INPUT_BOOST_FREQ;
+	input_boost_freq_duration = DEFAULT_INPUT_BOOST_FREQ_DURATION;
     
 	/* Initalize per-cpu timers */
 	for_each_possible_cpu(i) {
