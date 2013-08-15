@@ -25,10 +25,7 @@
 #include <linux/of.h>
 #include <mach/cpufreq.h>
 
-#define PANIC_TEMP 80
-#define HEATWAVE_FREQ 7
 #define LOW_FREQ 6
-#define PANIC_FREQ 3
 #define FAST_COUNTER 4
 #define SLOW_COUNTER 8
 
@@ -45,8 +42,6 @@ static int limit_idx_low;
 static int limit_idx_high;
 static int default_limit_idx_high;
 static struct cpufreq_frequency_table *table;
-
-bool get_heatwave(void);
 
 unsigned short get_threshold(void)
 {
@@ -87,7 +82,7 @@ static void limit_cpu_freqs(unsigned int freq)
 
 static unsigned short counting_range(long temp)
 {
-	if (temp >= temp_threshold + 5 || temp <= temp_threshold - 5)
+	if (temp >= temp_threshold + 10 || temp <= temp_threshold - 15)
 		return FAST_COUNTER;
 	else
 		return SLOW_COUNTER;
@@ -114,24 +109,9 @@ static void check_temp(struct work_struct *work)
 			limit_init = 1;
 	}
 	
-	if (get_heatwave() == true)
+	if (unlikely(temp >= temp_threshold + 20 && limit_idx > LOW_FREQ))
 	{
-		limit_idx_high = HEATWAVE_FREQ;
-		
-		if(unlikely(limit_idx > limit_idx_high))
-		{
-			limit_idx = limit_idx_high;
-			limit_cpu_freqs(table[limit_idx].frequency);
-		}
-	}
-	else
-	{
-		limit_idx_high = default_limit_idx_high;
-	}
-	
-	if (unlikely(temp >= 95 && limit_idx > PANIC_FREQ))
-	{
-		limit_idx = PANIC_FREQ;
+		limit_idx = LOW_FREQ;
 		limit_cpu_freqs(table[limit_idx].frequency);
 		polling = HZ/4;
 	}
@@ -155,7 +135,7 @@ static void check_temp(struct work_struct *work)
 		
 		polling = HZ/4;
 	}
-	else if (limit_idx < limit_idx_high)
+	else if (temp <= temp_threshold - 5 && limit_idx < limit_idx_high)
 	{
 		if (counter >= range)
 		{		

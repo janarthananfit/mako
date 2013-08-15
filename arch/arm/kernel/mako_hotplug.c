@@ -33,7 +33,6 @@
 #define DEFAULT_CORES_ON_TOUCH 2
 #define DEFAULT_COUNTER 10
 #define SEC_THRESHOLD 200
-#define HEATWAVE_COUNTER 20
 #define BOOST_THRESHOLD 5000
 #define TIMER HZ
 
@@ -48,8 +47,6 @@ struct cpu_stats
 	unsigned int suspend_frequency;
 	unsigned long time_stamp[2];
 	unsigned long now;
-	bool heatwave;
-	unsigned short heatwave_counter;
 };
 
 static struct cpu_stats stats;
@@ -198,30 +195,6 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 	}
 	
 end:
-		
-	if (stats.online_cpus > 3)
-	{
-		if (av_load >= 90)
-		{
-			if (stats.heatwave_counter <= HEATWAVE_COUNTER)
-				stats.heatwave_counter += 2;
-			
-			if (stats.heatwave_counter >= HEATWAVE_COUNTER / 2)
-				stats.heatwave = true;
-		}
-		else
-		{
-			if (stats.heatwave_counter > 0)
-				stats.heatwave_counter--;
-			
-			if (stats.heatwave_counter <= 0)
-				stats.heatwave = false;
-		}
-	}
-	else
-	{
-		stats.heatwave = false;
-	}
 	
 	if (stats.online_cpus != num_online_cpus())
 	{
@@ -393,11 +366,6 @@ unsigned int get_cores_on_touch()
 	return stats.cores_on_touch;
 }
 
-bool get_heatwave()
-{
-	return stats.heatwave;
-}
-
 /* end sysfs functions from external driver */
 
 int __init mako_hotplug_init(void)
@@ -414,8 +382,6 @@ int __init mako_hotplug_init(void)
 	stats.default_fourth_level = DEFAULT_FOURTH_LEVEL;
 	stats.suspend_frequency = DEFAULT_SUSPEND_FREQ;
 	stats.cores_on_touch = DEFAULT_CORES_ON_TOUCH;
-	stats.now = 0;
-	stats.heatwave = false;
 
 	wq = alloc_workqueue("mako_hotplug_workqueue", 
 					WQ_UNBOUND | WQ_RESCUER | WQ_FREEZABLE, 1);
