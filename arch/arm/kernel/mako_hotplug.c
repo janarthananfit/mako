@@ -25,10 +25,8 @@
  
 #include <mach/cpufreq.h>
 
-#define DEFAULT_FIRST_LEVEL 90
-#define DEFAULT_SECOND_LEVEL 60
+#define DEFAULT_FIRST_LEVEL 60
 #define DEFAULT_THIRD_LEVEL 30
-#define DEFAULT_FOURTH_LEVEL 10
 #define DEFAULT_SUSPEND_FREQ 702000
 #define DEFAULT_CORES_ON_TOUCH 2
 #define DEFAULT_COUNTER 10
@@ -40,20 +38,19 @@ struct cpu_stats
 {
 	unsigned int online_cpus;
 	unsigned int default_first_level;
-	unsigned int default_second_level;
 	unsigned int default_third_level;
-	unsigned int default_fourth_level;
 	unsigned int cores_on_touch;
 	unsigned int suspend_frequency;
-	unsigned long time_stamp[2];
+	unsigned long time_stamp;
 	unsigned long now;
+	bool core_boost[4];
 };
 
 static struct cpu_stats stats;
 static struct workqueue_struct *wq;
 static struct delayed_work decide_hotplug;
 
-static short second_counter = 0, third_counter = 0;
+static short first_counter = 0, third_counter = 0;
 
 void set_core_boost(int cpu, bool boost);
 
@@ -68,7 +65,7 @@ static void scale_interactive_tunables(unsigned int above_hispeed_delay,
 
 static bool online_core(void)
 {
-	int cpu;
+	unsigned int cpu;
 	
 	if (stats.online_cpus > 3)
 		return false;
@@ -82,16 +79,16 @@ static bool online_core(void)
 		}
 	}
 	
-	second_counter = 4;
+	first_counter = 4;
 	third_counter = 0;
 	
 	return true;
 }
 
-static bool offline_core(int cpu)
+static bool offline_core(unsigned int cpu)
 {   
-	if (stats.now - stats.time_stamp[1] < BOOST_THRESHOLD && 
-	stats.online_cpus == stats.cores_on_touch)
+	if ((stats.now - stats.time_stamp < BOOST_THRESHOLD && 
+			stats.online_cpus == stats.cores_on_touch) || cpu == 0)
 		return false;	
 	
 	if(cpu)
@@ -99,7 +96,7 @@ static bool offline_core(int cpu)
 		cpu_down(cpu);
 	}
 	
-	second_counter = 0;
+	first_counter = 0;
 	third_counter = 4;
 	
 	return true;  
@@ -107,16 +104,16 @@ static bool offline_core(int cpu)
 
 static void __cpuinit decide_hotplug_func(struct work_struct *work)
 {
-	int cpu, cpu_boost, lowest_cpu = 0;
+	unsigned int cpu, cpu_boost, lowest_cpu = 0;
 	unsigned int i = 0, load, av_load = 0, lowest_cpu_load = 100;
-	//int load_array[4] = {};
+	//short load_array[4] = {};
 
 	stats.now = ktime_to_ms(ktime_get());
 	stats.online_cpus = num_online_cpus();
 
 	if (is_touching)
 	{
-		stats.time_stamp[1] = stats.now;
+		stats.time_stamp = stats.now;
 		
 		if (stats.online_cpus < stats.cores_on_touch)
 		{
@@ -133,26 +130,8 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 		load = report_load_at_max_freq(cpu);
 		//load_array[cpu] = load;
 		
-		if (load >= stats.default_first_level 
-			&& stats.now - stats.time_stamp[0] > SEC_THRESHOLD)
-		{
-			if (online_core())
-			{
-				stats.time_stamp[0] = stats.now;
-				goto end;
-			}
-		}
-		else if (load <= stats.default_fourth_level && cpu != 0 && 
-		stats.now - stats.time_stamp[0] > SEC_THRESHOLD)
-		{
-			if (offline_core(cpu))
-			{
-				stats.time_stamp[0] = stats.now;
-				goto end;
-			}
-		}
-		
-		if (load < lowest_cpu_load && cpu != 0)
+		if (load < lowest_cpu_load && cpu != 0 &&
+				!(stats.core_boost[cpu] && is_touching))
 		{
 			lowest_cpu = cpu;
 			lowest_cpu_load = load;
@@ -163,15 +142,15 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 	
 	av_load = av_load / stats.online_cpus;
 	
-	if (av_load >= stats.default_second_level)
+	if (av_load >= stats.default_first_level)
 	{
-		if (second_counter < DEFAULT_COUNTER)
-			second_counter += 2;
+		if (first_counter < DEFAULT_COUNTER)
+			first_counter += 2;
 		
 		if (third_counter > 0)
 			third_counter -= 2;
 			
-		if (second_counter >= DEFAULT_COUNTER)
+		if (first_counter >= DEFAULT_COUNTER)
 			online_core();	
 	}
 	else if (av_load <= stats.default_third_level)
@@ -179,16 +158,16 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 		if (third_counter < DEFAULT_COUNTER)
 			third_counter += 2;
 		
-		if (second_counter > 0)
-			second_counter -= 2;
+		if (first_counter > 0)
+			first_counter -= 2;
 			
 		if (third_counter >= DEFAULT_COUNTER)
 			offline_core(lowest_cpu);	
 	}
 	else
 	{
-		if (second_counter > 0)
-			second_counter--;
+		if (first_counter > 0)
+			first_counter--;
 		
 		if (third_counter > 0)
 			third_counter--; 
@@ -204,12 +183,12 @@ end:
 		{
 			if (cpu_online(cpu_boost) && i < stats.cores_on_touch)
 			{
-				set_core_boost(cpu_boost, true);
+				stats.core_boost[cpu_boost] = true;
 				i++;
 			}
 			else
 			{
-				set_core_boost(cpu_boost, false);
+				stats.core_boost[cpu_boost] = false;
 			}
 		}
 	
@@ -232,12 +211,8 @@ end:
 	pr_info("Core2:\t%d", load_array[2]);
 	pr_info("Core3:\t%d", load_array[3]);
 	pr_info("Av Load:\t%d", av_load);
-	for_each_online_cpu(cpu)
-	{
-	pr_info("Cur_max%d:\t%d",cpu,get_cur_max(cpu));
-	}
 	pr_info("-------------------------");
-	pr_info("Up count:\t%d\n",second_counter);
+	pr_info("Up count:\t%d\n",first_counter);
 	pr_info("Dw count:\t%d\n",third_counter);
 	*/
 	
@@ -263,7 +238,7 @@ static void __cpuinit mako_hotplug_early_suspend(struct early_suspend *handler)
 	}
 	scale_interactive_tunables(10000, 20000, 40000);
 	
-	second_counter = 0;
+	first_counter = 0;
 	third_counter = 0;
 	
 	/* cap max frequency to 702MHz by default */
@@ -287,7 +262,7 @@ static void __cpuinit mako_hotplug_late_resume(struct early_suspend *handler)
 	}
 	scale_interactive_tunables(0, 20000, 80000);
 	
-	second_counter = 0;
+	first_counter = 0;
 	third_counter = 0;
 	
 	/* restore max frequency */
@@ -306,24 +281,15 @@ static struct early_suspend mako_hotplug_suspend =
 };
 
 /* sysfs functions for external driver */
+
 void update_first_level(unsigned int level)
 {
 	stats.default_first_level = level;
 }
 
-void update_second_level(unsigned int level)
-{
-	stats.default_second_level = level;
-}
-
 void update_third_level(unsigned int level)
 {
 	stats.default_third_level = level;
-}
-
-void update_fourth_level(unsigned int level)
-{
-	stats.default_fourth_level = level;
 }
 
 void update_suspend_frequency(unsigned int freq)
@@ -341,19 +307,9 @@ unsigned int get_first_level()
 	return stats.default_first_level;
 }
 
-unsigned int get_second_level()
-{
-	return stats.default_second_level;
-}
-
 unsigned int get_third_level()
 {
 	return stats.default_third_level;
-}
-
-unsigned int get_fourth_level()
-{
-	return stats.default_fourth_level;
 }
 
 unsigned int get_suspend_frequency()
@@ -366,6 +322,11 @@ unsigned int get_cores_on_touch()
 	return stats.cores_on_touch;
 }
 
+bool get_core_boost(unsigned int cpu)
+{
+	return stats.core_boost[cpu];
+}
+
 /* end sysfs functions from external driver */
 
 int __init mako_hotplug_init(void)
@@ -373,13 +334,10 @@ int __init mako_hotplug_init(void)
 	pr_info("Mako Hotplug driver started.\n");
 	
 	/* init everything here */
-	stats.time_stamp[0] = 0;
-	stats.time_stamp[1] = 0;
+	stats.time_stamp = 0;
 	stats.online_cpus = num_online_cpus();
 	stats.default_first_level = DEFAULT_FIRST_LEVEL;
-	stats.default_second_level = DEFAULT_SECOND_LEVEL;
 	stats.default_third_level = DEFAULT_THIRD_LEVEL;
-	stats.default_fourth_level = DEFAULT_FOURTH_LEVEL;
 	stats.suspend_frequency = DEFAULT_SUSPEND_FREQ;
 	stats.cores_on_touch = DEFAULT_CORES_ON_TOUCH;
 

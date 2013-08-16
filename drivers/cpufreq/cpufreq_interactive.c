@@ -116,11 +116,7 @@ static int input_boost_freq_duration;
  */
 static bool dynamic_scaling = true;
 
-/*
- * determines which core gets touchboost
- */
-static bool core_boost[4] = {0};
-
+bool get_core_boost(unsigned int cpu);
 unsigned int get_cur_max(unsigned int cpu);
 
 static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
@@ -288,7 +284,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	 * we want cpu0 to be the only core blocked for freq changes while
      	 * we are touching the screen for UI interaction 
 	 */
-	if (is_touching && core_boost[pcpu->policy->cpu] == true)
+	if (is_touching && get_core_boost(pcpu->policy->cpu))
 	{
 		if (ktime_to_ms(ktime_get()) - 
 				freq_boosted_time >= input_boost_freq_duration)
@@ -767,11 +763,6 @@ void scale_min_sample_time(unsigned int new_min_sample_time)
 {
 	if (dynamic_scaling && min_sample_time != new_min_sample_time)
 		min_sample_time = new_min_sample_time;
-}
-
-void set_core_boost(int cpu, bool boost)
-{
-	core_boost[cpu] = boost;
 }
 
 unsigned int get_input_boost_freq()
