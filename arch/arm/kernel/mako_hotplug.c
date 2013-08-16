@@ -68,7 +68,7 @@ static bool online_core(void)
 	
 	for_each_possible_cpu(cpu) 
 	{
-		if (cpu && !cpu_online(cpu)) 
+		if (!cpu_online(cpu)) 
 		{
 			cpu_up(cpu);
 			break;
@@ -84,7 +84,7 @@ static bool online_core(void)
 static bool offline_core(unsigned int cpu)
 {   
 	if ((now - time_stamp < BOOST_THRESHOLD && 
-			online_cpus == cores_on_touch) || cpu == 0)
+			online_cpus == cores_on_touch) || !cpu)
 		return false;	
 	
 	if(cpu)
@@ -126,7 +126,7 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 		load = report_load_at_max_freq(cpu);
 		//load_array[cpu] = load;
 		
-		if (load < lowest_cpu_load && cpu != 0 &&
+		if (load < lowest_cpu_load && cpu &&
 				!(core_boost[cpu] && is_touching))
 		{
 			lowest_cpu = cpu;
@@ -225,15 +225,14 @@ static void __cpuinit mako_hotplug_early_suspend(struct early_suspend *handler)
 
 	pr_info("Early Suspend stopping Hotplug work...\n");
 	
-	for_each_online_cpu(cpu) 
+	for_each_possible_cpu(cpu) 
 	{
-		if (cpu) 
-		{
-			cpu_down(cpu);
-		}
+		if (cpu) {cpu_down(cpu);}
+		core_boost[cpu] = false;
 	}
 	scale_interactive_tunables(10000, 20000, 40000);
 	
+	is_touching = false;
 	first_counter = 0;
 	third_counter = 0;
 	
@@ -248,18 +247,16 @@ static void __cpuinit mako_hotplug_late_resume(struct early_suspend *handler)
 {  
 	int cpu;
 
-	/* online all cores when the screen goes online */
+	/* online 1 core when the screen goes online */
 	for_each_possible_cpu(cpu) 
 	{
-		if (cpu) 
-		{
-			cpu_up(cpu);
-		}
+		core_boost[cpu] = true;
+		if (!cpu_online(cpu)) {cpu_up(cpu); break;}
 	}
-	scale_interactive_tunables(0, 20000, 80000);
+	scale_interactive_tunables(20000, 30000, 20000);
 	
-	first_counter = 0;
-	third_counter = 0;
+	freq_boosted_time = ktime_to_ms(ktime_get());
+	is_touching = true;
 	
 	/* restore max frequency */
 	msm_cpufreq_set_freq_limits(0, MSM_CPUFREQ_NO_LIMIT, MSM_CPUFREQ_NO_LIMIT);
