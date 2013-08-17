@@ -25,7 +25,7 @@
 #include <linux/of.h>
 #include <mach/cpufreq.h>
 
-#define LOW_FREQ 6
+#define LOW_FREQ 8
 #define FAST_COUNTER 4
 #define SLOW_COUNTER 8
 
