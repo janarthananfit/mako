@@ -109,7 +109,8 @@ static void check_temp(struct work_struct *work)
 			limit_init = 1;
 	}
 	
-	if (unlikely(temp >= temp_threshold + 20 && limit_idx > LOW_FREQ))
+	if (unlikely((temp >= temp_threshold + 20 || temp >= 95) 
+			&& limit_idx > LOW_FREQ))
 	{
 		limit_idx = LOW_FREQ;
 		limit_cpu_freqs(table[limit_idx].frequency);
