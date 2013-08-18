@@ -68,11 +68,11 @@ static spinlock_t down_cpumask_lock;
 static struct mutex set_speed_lock;
 
 /* Hi speed to bump to from lo speed when load burst (default max) */
-#define DEFAULT_HISPEED_FREQ 1026000
+#define DEFAULT_HISPEED_FREQ 702000
 static u64 hispeed_freq;
 
 /* Bump the CPU to hispeed_freq if its load is >= 50% */
-#define HISPEED_FREQ_LOAD 50
+#define HISPEED_FREQ_LOAD 40
 
 /* If the CPU load is >= 85% it goes to max frequency */
 #define DEFAULT_UP_THRESHOLD 85
@@ -101,7 +101,7 @@ static unsigned long above_hispeed_delay_val;
  * The CPU will be boosted to this frequency when the screen is
  * touched. input_boost needs to be enabled.
  */
-#define DEFAULT_INPUT_BOOST_FREQ 1512000
+#define DEFAULT_INPUT_BOOST_FREQ 1026000
 static int input_boost_freq;
 
 /*
@@ -121,7 +121,10 @@ static bool dynamic_scaling = true;
  * device is being thermal throttled or not to ensure that the loads are
  * properly calculated
  */
-unsigned int get_cur_max(unsigned int cpu);
+ 
+unsigned int get_cur_max(unsigned int cpu); 
+
+bool get_core_boost(unsigned int cpu);
 
 static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
                                         unsigned int event);
@@ -256,19 +259,20 @@ static void cpufreq_interactive_timer(unsigned long data)
 	 */
 	if (load_since_change > cpu_load)
 		cpu_load = load_since_change;
-    
+	
+	/* checking for throttling */
 	cur_max = get_cur_max(pcpu->policy->cpu);
-
-	max_freq = cur_max >= pcpu->policy->max ? pcpu->policy->max : cur_max;
-
+	
+	if (cur_max >= pcpu->policy->max)
+		max_freq = pcpu->policy->max;
+	else
+		max_freq = cur_max;	
+    
 	/* Lets divide by up_threshold so that the device uses more freqs */
 	new_freq = max_freq * cpu_load / up_threshold;
 
 	if (cpu_load >= up_threshold)
 		new_freq = max_freq;
-	/* if the cpu load is >= 50% lets bump the cpu to hispeed_freq */
-	else if (cpu_load >= HISPEED_FREQ_LOAD && new_freq < hispeed_freq)
-		new_freq = hispeed_freq;
     
 	if (new_freq <= hispeed_freq)
 		pcpu->hispeed_validate_time = pcpu->timer_run_time;
@@ -287,7 +291,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	 * we want cpu0 to be the only core blocked for freq changes while
      	 * we are touching the screen for UI interaction 
 	 */
-	if (is_touching && pcpu->policy->cpu < 2)
+	if (is_touching && get_core_boost(pcpu->policy->cpu))
 	{
 		if (ktime_to_ms(ktime_get()) - 
 				freq_boosted_time >= input_boost_freq_duration)
@@ -766,6 +770,12 @@ void scale_min_sample_time(unsigned int new_min_sample_time)
 {
 	if (dynamic_scaling && min_sample_time != new_min_sample_time)
 		min_sample_time = new_min_sample_time;
+}
+
+void scale_up_threshold(unsigned int new_up_threshold)
+{
+	if (dynamic_scaling && up_threshold != new_up_threshold)
+		up_threshold = new_up_threshold;
 }
 
 unsigned int get_input_boost_freq()

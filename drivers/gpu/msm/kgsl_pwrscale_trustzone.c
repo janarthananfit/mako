@@ -144,22 +144,22 @@ module_param_named(simple_ramp_threshold, ramp_up_threshold, int, 0664);
 
 static unsigned int history[HISTORY_SIZE] = {0};
 static unsigned int counter = 0;
+static unsigned int full_load = 0;
 
 static int simple_governor(struct kgsl_device *device, int idle_stat)
 {
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
-	int i;
 	unsigned int total = 0;
-    
+
+	full_load -= history[counter];
 	history[counter] = idle_stat;
-    
-	for (i = 0; i < HISTORY_SIZE; i++)
-		total += history[i];
-    
-	total = total/HISTORY_SIZE;
-    
-	if (++counter == 10)
+	
+	full_load += idle_stat;
+
+	if (unlikely(++counter >= HISTORY_SIZE))
 		counter = 0;
+
+	total = full_load / HISTORY_SIZE;
     
 	/* it's currently busy */
 	if (total < ramp_up_threshold)
