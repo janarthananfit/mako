@@ -104,11 +104,11 @@ static ssize_t tz_governor_store(struct kgsl_device *device,
 	mutex_lock(&device->mutex);
 
 	if (!strncmp(str, "ondemand", 8))
-		priv->governor = TZ_GOVERNOR_ONDEMAND;
+		priv->governor = TZ_GOVERNOR_SIMPLE;
     	else if (!strncmp(str, "simple", 6))
 		priv->governor = TZ_GOVERNOR_SIMPLE;
 	else if (!strncmp(str, "performance", 11))
-		priv->governor = TZ_GOVERNOR_PERFORMANCE;
+		priv->governor = TZ_GOVERNOR_SIMPLE;
 
 	if (priv->governor == TZ_GOVERNOR_PERFORMANCE)
 		kgsl_pwrctrl_pwrlevel_change(device, pwr->max_pwrlevel);
