@@ -116,8 +116,15 @@ static int input_boost_freq_duration;
  */
 static bool dynamic_scaling = true;
 
+/*
+ * Helper to get the maximum set frequency which takes into consideration if the
+ * device is being thermal throttled or not to ensure that the loads are
+ * properly calculated
+ */
+ 
+unsigned int get_cur_max(unsigned int cpu); 
+
 bool get_core_boost(unsigned int cpu);
-unsigned int get_cur_max(unsigned int cpu);
 
 static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
                                         unsigned int event);
