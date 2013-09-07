@@ -814,10 +814,13 @@ static void __cpuinit touch_work_func(struct work_struct *work)
 	int ret;
 
 	if (!is_touching)
+	{
+		idle_counter = 0;
+		gpu_idle = false;
 		touchboost_func();
+	}
 
     is_touching = true;
-    idle_counter = 0;
 	freq_boosted_time = time_stamp = ktime_to_ms(ktime_get());
     
 	atomic_dec(&ts->next_work);

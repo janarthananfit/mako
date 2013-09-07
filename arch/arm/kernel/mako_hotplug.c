@@ -30,44 +30,19 @@
 #define DEFAULT_SUSPEND_FREQ 702000
 #define DEFAULT_CORES_ON_TOUCH 2
 #define DEFAULT_COUNTER 10
-#define SEC_THRESHOLD 200
 #define BOOST_THRESHOLD 5000
-#define TIMER HZ
 
 static struct workqueue_struct *wq;
 static struct delayed_work decide_hotplug;
 
-static unsigned int online_cpus;
 static unsigned int default_first_level;
 static unsigned int default_third_level;
 static unsigned int cores_on_touch;
 static unsigned int suspend_frequency;
 static unsigned long now;
 static bool core_boost[4];
-static bool old_gpu_idle;
 static short first_counter = 0;
 static short third_counter = 0;
-
-static void scale_interactive_tunables(unsigned int up_threshold,
-	unsigned int timer_rate, 
-	unsigned int min_sample_time)
-{
-	scale_up_threshold(up_threshold);
-	scale_timer_rate(timer_rate);
-	scale_min_sample_time(min_sample_time);
-}
-
-static void scaling(unsigned short num_cpus)
-{
-	// above_hispeed_delay, timer_rate, min_sample_time
-	switch(num_cpus)
-	{
-		case 1: scale_interactive_tunables(95, 30000, 15000); break;
-		case 2: scale_interactive_tunables(90, 40000, 20000); break;
-		case 3: scale_interactive_tunables(90, 30000, 40000); break;
-		case 4: scale_interactive_tunables(90, 20000, 80000); break;
-	}
-}
 
 static void __cpuinit online_core(unsigned short cpus_num)
 {
@@ -122,7 +97,6 @@ void __cpuinit touchboost_func(void)
 		{
 			online_core(cpus_num);
 		}
-		scaling(i);
 	}
 	core = 0;
 	
@@ -142,8 +116,11 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 {
 	unsigned int cpu, lowest_cpu = 0;
 	unsigned int load, av_load = 0, lowest_cpu_load = 100;
-	unsigned short num_cpus;
+	unsigned short online_cpus;
 	//short load_array[4] = {};
+	
+    //int cpu_debug = 0;
+    //struct cpufreq_policy policy;
 
 	now = ktime_to_ms(ktime_get());
 	online_cpus = num_online_cpus();
@@ -197,29 +174,6 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 			third_counter--; 
 	}
 	
-	num_cpus = num_online_cpus();
-	
-	if (num_cpus == 1)
-	{
-		if (online_cpus != num_cpus)
-			old_gpu_idle = (gpu_idle)?false:true;
-		
-		if (gpu_idle && !old_gpu_idle)
-		{
-			scale_interactive_tunables(95, 30000, 10000);
-			old_gpu_idle = true;
-		}
-		else if (!gpu_idle && old_gpu_idle)
-		{
-			scale_interactive_tunables(90, 30000, 15000);
-			old_gpu_idle = false;
-		}
-	}
-	else if (online_cpus != num_cpus && interactive_selected)
-	{
-		scaling(num_cpus);
-	}
-	
 /*	cpu = 0;
 	pr_info("----HOTPLUG DEBUG INFO----\n");
 	pr_info("Cores on:\t%d", num_online_cpus());
@@ -232,7 +186,21 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 	pr_info("Up count:\t%d\n",first_counter);
 	pr_info("Dw count:\t%d\n",third_counter);*/
 	
-	queue_delayed_work(wq, &decide_hotplug, msecs_to_jiffies(TIMER));
+
+/*    for_each_possible_cpu(cpu_debug)
+    {
+    	if (cpu_online(cpu_debug))
+    	{
+    		cpufreq_get_policy(&policy, cpu_debug);
+    		pr_info("cpu%d:\t%d MHz",cpu_debug,policy.cur/1000);
+    	}
+    	else
+    		pr_info("cpu%d:\toff",cpu_debug);
+    }
+    pr_info("-----------------------------------------");*/
+
+	
+	queue_delayed_work(wq, &decide_hotplug, msecs_to_jiffies(80));
 }
 
 static void __cpuinit mako_hotplug_early_suspend(struct early_suspend *handler)
@@ -254,7 +222,6 @@ static void __cpuinit mako_hotplug_early_suspend(struct early_suspend *handler)
 		}
 		
 	}
-	scale_interactive_tunables(95, 30000, 10000);
 	
 	is_touching = false;
 	first_counter = 0;
@@ -283,7 +250,6 @@ static void __cpuinit mako_hotplug_late_resume(struct early_suspend *handler)
 		cpufreq_get_policy(&policy, cpu);
 		__cpufreq_driver_target(&policy, 1026000, CPUFREQ_RELATION_H);
 	}
-	scale_interactive_tunables(90, 40000, 20000);
 	
 	freq_boosted_time = ktime_to_ms(ktime_get());
 	is_touching = true;
@@ -355,7 +321,6 @@ int __init mako_hotplug_init(void)
 	/* init everything here */
 	core_boost[0] = true;
 	time_stamp = 0;
-	online_cpus = num_online_cpus();
 	default_first_level = DEFAULT_FIRST_LEVEL;
 	default_third_level = DEFAULT_THIRD_LEVEL;
 	suspend_frequency = DEFAULT_SUSPEND_FREQ;
