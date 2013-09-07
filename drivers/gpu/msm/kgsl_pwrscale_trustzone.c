@@ -191,8 +191,12 @@ static int simple_governor(struct kgsl_device *device, int idle_stat)
 		if (idle_counter <= 0)
 		{
 			if (gpu_idle && is_touching)
+			{
+				gpu_idle = false;
 				touchboost_func();
-			gpu_idle = false;
+			}
+			else
+				gpu_idle = false;
 		}
 	}
     

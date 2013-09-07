@@ -66,21 +66,41 @@ static cpumask_t down_cpumask;
 static spinlock_t down_cpumask_lock;
 static struct mutex set_speed_lock;
 
+#define GPU_STATE 2
+#define ACTIVE_CORES 4
+#define TUNABLES 3
+
+/* up_threshold, timer_rate, min_sample_time */
+static unsigned int interactive_val[GPU_STATE][ACTIVE_CORES][TUNABLES] =
+{{	
+	/* gpu idle */
+	{100, 40000, 10000},
+	{100, 40000, 20000},
+	{100, 40000, 30000},
+	{100, 40000, 40000} 
+	},{
+	/* gpu busy */
+	{90, 20000, 40000},
+	{90, 20000, 40000},
+	{95, 20000, 60000},
+	{95, 20000, 80000} 
+}};
+
 /* If the CPU load is >= 85% it goes to max frequency */
 #define DEFAULT_UP_THRESHOLD 85
-static unsigned long up_threshold;
+static unsigned int up_threshold;
 
 /*
  * The minimum amount of time to spend at a frequency before we can ramp down.
  */
 #define DEFAULT_MIN_SAMPLE_TIME (80 * USEC_PER_MSEC)
-static unsigned long min_sample_time;
+static unsigned int min_sample_time;
 
 /*
  * The sample rate of the timer used to increase frequency
  */
 #define DEFAULT_TIMER_RATE (35 * USEC_PER_MSEC)
-static unsigned long timer_rate;
+static unsigned int timer_rate;
 
 /*
  * The CPU will be boosted to this frequency when the screen is
@@ -92,7 +112,7 @@ static int input_boost_freq;
 /*
  * Duration of the touch boost
  */
-#define DEFAULT_INPUT_BOOST_FREQ_DURATION 2000
+#define DEFAULT_INPUT_BOOST_FREQ_DURATION 1500
 static int input_boost_freq_duration;
 
 /*
@@ -111,10 +131,12 @@ unsigned int get_cur_max(unsigned int cpu);
 
 bool get_core_boost(unsigned int cpu);
 
-bool interactive_selected = false;
-
 static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
                                         unsigned int event);
+
+unsigned int scale_min_sample_time(void);
+unsigned int scale_timer_rate(void);
+unsigned int scale_up_threshold(void);
 
 #ifndef CONFIG_CPU_FREQ_DEFAULT_GOV_INTERACTIVE
 static
@@ -189,6 +211,16 @@ static void cpufreq_interactive_timer(unsigned long data)
 	unsigned int cur_max;
 	unsigned int max_freq;
     
+    /*static unsigned long time_stamp;
+    if (time_stamp < ktime_to_ms(ktime_get()) - 500)
+    {
+    	pr_info("up_threshold, timer_rate, min_sample_time");
+    	pr_info("%d\t%d\t%d", scale_up_threshold(),scale_timer_rate(),
+    		scale_min_sample_time());
+    	pr_info("-----------------------------------------");
+    	time_stamp = ktime_to_ms(ktime_get());
+    }*/
+    
 	smp_rmb();
     
 	if (!pcpu->governor_enabled)
@@ -256,9 +288,9 @@ static void cpufreq_interactive_timer(unsigned long data)
 		max_freq = cur_max;	
     
 	/* Lets divide by up_threshold so that the device uses more freqs */
-	new_freq = max_freq * cpu_load / up_threshold;
+	new_freq = max_freq * cpu_load / scale_up_threshold();
 
-	if (cpu_load >= up_threshold)
+	if (cpu_load >= scale_up_threshold())
 		new_freq = max_freq;
     
 	if (cpufreq_frequency_table_target(pcpu->policy, pcpu->freq_table,
@@ -291,7 +323,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	 */
 	if (new_freq < pcpu->floor_freq) {
 		if (pcpu->timer_run_time - pcpu->floor_validate_time
-		    < min_sample_time) {
+		    < scale_min_sample_time()) {
 			goto rearm;
 		}
 	}
@@ -342,7 +374,7 @@ rearm:
 		pcpu->time_in_idle = get_cpu_idle_time(
                                                data, &pcpu->idle_exit_time);
 		mod_timer_pinned(&pcpu->cpu_timer,
-                         jiffies + usecs_to_jiffies(timer_rate));
+                         jiffies + usecs_to_jiffies(scale_timer_rate()));
 	}
     
 	return;
@@ -382,7 +414,7 @@ static void cpufreq_interactive_idle_start(void)
                                                    smp_processor_id(), &pcpu->idle_exit_time);
 			pcpu->timer_idlecancel = 0;
 			mod_timer_pinned(&pcpu->cpu_timer,
-                             jiffies + usecs_to_jiffies(timer_rate));
+                             jiffies + usecs_to_jiffies(scale_timer_rate()));
 		}
 #endif
 	} else {
@@ -433,7 +465,7 @@ static void cpufreq_interactive_idle_end(void)
                           &pcpu->idle_exit_time);
 		pcpu->timer_idlecancel = 0;
 		mod_timer_pinned(&pcpu->cpu_timer,
-                         jiffies + usecs_to_jiffies(timer_rate));
+                         jiffies + usecs_to_jiffies(scale_timer_rate()));
 	}
     
 }
@@ -538,7 +570,7 @@ static void cpufreq_interactive_freq_down(struct work_struct *work)
 static ssize_t show_up_threshold(struct kobject *kobj,
                                  struct attribute *attr, char *buf)
 {
-	return sprintf(buf, "%lu\n", up_threshold);
+	return sprintf(buf, "%d\n", up_threshold);
 }
 
 static ssize_t store_up_threshold(struct kobject *kobj,
@@ -560,7 +592,7 @@ static struct global_attr up_threshold_attr = __ATTR(up_threshold, 0644,
 static ssize_t show_min_sample_time(struct kobject *kobj,
                                     struct attribute *attr, char *buf)
 {
-	return sprintf(buf, "%lu\n", min_sample_time);
+	return sprintf(buf, "%d\n", min_sample_time);
 }
 
 static ssize_t store_min_sample_time(struct kobject *kobj,
@@ -582,7 +614,7 @@ static struct global_attr min_sample_time_attr = __ATTR(min_sample_time, 0644,
 static ssize_t show_timer_rate(struct kobject *kobj,
                                struct attribute *attr, char *buf)
 {
-	return sprintf(buf, "%lu\n", timer_rate);
+	return sprintf(buf, "%d\n", timer_rate);
 }
 
 static ssize_t store_timer_rate(struct kobject *kobj,
@@ -690,37 +722,35 @@ static struct attribute_group interactive_attr_group = {
 	.name = "interactive",
 };
 
-void scale_timer_rate(unsigned int new_timer_rate)
+/* gpu_state, online_cpus, tunable */
+
+unsigned int scale_min_sample_time(void)
 {
-	if (dynamic_scaling && timer_rate != new_timer_rate)
-		timer_rate = new_timer_rate;
+	if (dynamic_scaling)
+		return interactive_val[(gpu_idle)?0:1][num_online_cpus()-1][2];
+	else
+		return min_sample_time;
 }
 
-void scale_min_sample_time(unsigned int new_min_sample_time)
+unsigned int scale_timer_rate(void)
 {
-	if (dynamic_scaling && min_sample_time != new_min_sample_time)
-		min_sample_time = new_min_sample_time;
+	if (dynamic_scaling)
+		return interactive_val[(gpu_idle)?0:1][num_online_cpus()-1][1];
+	else
+		return timer_rate;
 }
 
-void scale_up_threshold(unsigned int new_up_threshold)
+unsigned int scale_up_threshold(void)
 {
-	if (dynamic_scaling && up_threshold != new_up_threshold)
-		up_threshold = new_up_threshold;
+	if (dynamic_scaling)
+		return interactive_val[(gpu_idle)?0:1][num_online_cpus()-1][0];
+	else
+		return up_threshold;
 }
 
 unsigned int get_input_boost_freq()
 {
 	return input_boost_freq;
-}
-
-unsigned int get_min_sample_time()
-{
-	return min_sample_time;
-}
-
-bool get_dynamic_scaling()
-{
-	return dynamic_scaling;
 }
 
 static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
@@ -750,7 +780,7 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
                 pcpu->governor_enabled = 1;
                 pcpu->idle_exit_time = pcpu->target_set_time;
                 mod_timer_pinned(&pcpu->cpu_timer,
-                                 jiffies + usecs_to_jiffies(timer_rate));
+                                 jiffies + usecs_to_jiffies(scale_timer_rate()));
                 smp_wmb();
             }
             
@@ -760,8 +790,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
              */
             if (atomic_inc_return(&active_count) > 1)
                 return 0;
-                
-            interactive_selected = true;
             
             rc = sysfs_create_group(cpufreq_global_kobject,
                                     &interactive_attr_group);
@@ -789,8 +817,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
             flush_work(&freq_scale_down_work);
             if (atomic_dec_return(&active_count) > 0)
                 return 0;
-                
-            interactive_selected = false;
             
             sysfs_remove_group(cpufreq_global_kobject,
                                &interactive_attr_group);

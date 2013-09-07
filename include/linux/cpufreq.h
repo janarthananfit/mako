@@ -416,9 +416,4 @@ void cpufreq_frequency_table_get_attr(struct cpufreq_frequency_table *table,
 
 void cpufreq_frequency_table_put_attr(unsigned int cpu);
 
-/* hooks to scale interactive tunables based on load */
-extern void scale_up_threshold(unsigned int up_threshold);
-extern void scale_timer_rate(unsigned int timer_rate);
-extern void scale_min_sample_time(unsigned int min_sample_time);
-
 #endif /* _LINUX_CPUFREQ_H */
