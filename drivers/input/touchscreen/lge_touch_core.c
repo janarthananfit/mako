@@ -815,7 +815,6 @@ static void __cpuinit touch_work_func(struct work_struct *work)
 
 	if (!is_touching)
 	{
-		idle_counter = 0;
 		gpu_idle = false;
 		touchboost_func();
 	}
