@@ -33,13 +33,11 @@ extern unsigned int get_input_boost_freq(void);
 extern void touchboost_func(void);
 
 extern bool gpu_idle;
-extern unsigned short idle_counter;
+extern short idle_counter;
 extern bool is_touching;
 extern u64 freq_boosted_time;
 extern unsigned long time_stamp;
 
 extern unsigned int report_load_at_max_freq(int cpu);
-
-extern bool interactive_selected;
 
 #endif

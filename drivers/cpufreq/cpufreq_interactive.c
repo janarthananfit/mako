@@ -128,7 +128,6 @@ static bool dynamic_scaling = true;
  */
  
 unsigned int get_cur_max(unsigned int cpu); 
-
 bool get_core_boost(unsigned int cpu);
 
 static int cpufreq_governor_interactive(struct cpufreq_policy *policy,

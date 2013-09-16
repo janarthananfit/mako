@@ -187,7 +187,7 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 	pr_info("Dw count:\t%d\n",third_counter);*/
 	
 
-/*    for_each_possible_cpu(cpu_debug)
+/*	for_each_possible_cpu(cpu_debug)
     {
     	if (cpu_online(cpu_debug))
     	{
