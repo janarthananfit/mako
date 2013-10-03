@@ -43,13 +43,9 @@ struct audio_amp_platform_data {
 	char agc_compression_rate;
 	char agc_output_limiter_disable;
 	char agc_fixed_gain;
-//-- optional
-	char ATK_time;
-	char REL_time;
-	char Hold_time;
-	char Output_limit_level;
-	char Noise_Gate_Threshold;
-	char AGC_Max_Gain;
+	char atk_time;
+	char rel_time;
+	char max_gain;
 };
 
 /* SPK FUNCTION */

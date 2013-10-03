@@ -83,6 +83,38 @@ static void __cpuinit offline_core(unsigned int cpu)
 	return;
 }
 
+unsigned int scale_first_level(void)
+{
+	if (!dynamic_scaling)
+		return default_first_level;
+		
+	if (gpu_idle)
+	{
+		if (default_first_level + 20 <= 90)
+			return default_first_level + 20;
+		else
+			return 90;
+	}
+	else
+		return default_first_level;
+}
+
+unsigned int scale_third_level(void)
+{
+	if (!dynamic_scaling)
+		return default_third_level;
+		
+	if (gpu_idle)
+	{
+		if (default_third_level + 20 <= 60)
+			return default_third_level + 20;
+		else
+			return 60;
+	}
+	else
+		return default_third_level;
+}
+
 void __cpuinit touchboost_func(void)
 {	
 	unsigned int i, core, cpus_num, boost_freq;
@@ -143,7 +175,7 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 
 	av_load = av_load / online_cpus;
 	
-	if (av_load >= default_first_level)
+	if (av_load >= scale_first_level())
 	{
 		if (first_counter < DEFAULT_COUNTER)
 			first_counter += 2;
@@ -154,7 +186,7 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 		if (first_counter >= DEFAULT_COUNTER)
 			online_core(online_cpus);	
 	}
-	else if (av_load <= default_third_level)
+	else if (av_load <= scale_third_level())
 	{
 		if (third_counter < DEFAULT_COUNTER)
 			third_counter += 2;
@@ -187,7 +219,7 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 	pr_info("Dw count:\t%d\n",third_counter);*/
 	
 
-/*	for_each_possible_cpu(cpu_debug)
+	/*for_each_possible_cpu(cpu_debug)
     {
     	if (cpu_online(cpu_debug))
     	{
@@ -197,6 +229,8 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
     	else
     		pr_info("cpu%d:\toff",cpu_debug);
     }
+    pr_info("First level: %d", scale_first_level());
+    pr_info("Third level: %d", scale_third_level());
     pr_info("-----------------------------------------");*/
 
 	
@@ -233,26 +267,16 @@ static void __cpuinit mako_hotplug_early_suspend(struct early_suspend *handler)
 }
 
 static void __cpuinit mako_hotplug_late_resume(struct early_suspend *handler)
-{  
-	struct cpufreq_policy policy;
-	unsigned int cpu;
-
+{
 	/* restore max frequency */
 	msm_cpufreq_set_freq_limits(0, MSM_CPUFREQ_NO_LIMIT, MSM_CPUFREQ_NO_LIMIT);
 
-	/* 2 online cores and max freq when the screen goes online */
-	for (cpu = 0; cpu < 2; cpu++)
-	{
-		if (!cpu_online(cpu))
-			cpu_up(cpu);
-			
-		core_boost[cpu] = true;
-		cpufreq_get_policy(&policy, cpu);
-		__cpufreq_driver_target(&policy, 1026000, CPUFREQ_RELATION_H);
-	}
-	
-	freq_boosted_time = ktime_to_ms(ktime_get());
+	/* touchboost */
+
+	freq_boosted_time = time_stamp = ktime_to_ms(ktime_get());
 	is_touching = true;
+	
+	touchboost_func();
 	
 	pr_info("Late Resume starting Hotplug work...\n");
 	queue_delayed_work(wq, &decide_hotplug, HZ);
@@ -326,8 +350,7 @@ int __init mako_hotplug_init(void)
 	suspend_frequency = DEFAULT_SUSPEND_FREQ;
 	cores_on_touch = DEFAULT_CORES_ON_TOUCH;
 
-	wq = alloc_workqueue("mako_hotplug_workqueue", 
-					WQ_UNBOUND | WQ_RESCUER | WQ_FREEZABLE, 1);
+	wq = alloc_workqueue("mako_hotplug_workqueue", WQ_FREEZABLE, 1);
 	
 	if (!wq)
 		return -ENOMEM;
