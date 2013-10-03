@@ -326,8 +326,7 @@ int __init mako_hotplug_init(void)
 	suspend_frequency = DEFAULT_SUSPEND_FREQ;
 	cores_on_touch = DEFAULT_CORES_ON_TOUCH;
 
-	wq = alloc_workqueue("mako_hotplug_workqueue", 
-					WQ_UNBOUND | WQ_RESCUER | WQ_FREEZABLE, 1);
+	wq = alloc_workqueue("mako_hotplug_workqueue", WQ_FREEZABLE, 1);
 	
 	if (!wq)
 		return -ENOMEM;

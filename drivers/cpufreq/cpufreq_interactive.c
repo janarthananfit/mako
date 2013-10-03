@@ -249,16 +249,11 @@ static void cpufreq_interactive_timer(unsigned long data)
 	delta_idle = (unsigned int)(now_idle - time_in_idle);
 	delta_time = (unsigned int)(pcpu->timer_run_time - idle_exit_time);
     
-	/*
-	 * If timer ran less than 1ms after short-term sample started, retry.
-	 */
-	if (delta_time < 1000)
+	if (WARN_ON_ONCE(!delta_time))
 		goto rearm;
     
-	if (delta_idle > delta_time)
-		cpu_load = 0;
-	else
-		cpu_load = 100 * (delta_time - delta_idle) / delta_time;
+    cpu_load = delta_idle > delta_time ? 
+                         0 : 100 * (delta_time - delta_idle) / delta_time;
     
 	delta_idle = (unsigned int)(now_idle - pcpu->target_set_time_in_idle);
 	delta_time = (unsigned int)(pcpu->timer_run_time -
@@ -280,12 +275,9 @@ static void cpufreq_interactive_timer(unsigned long data)
 	
 	/* checking for throttling */
 	cur_max = get_cur_max(pcpu->policy->cpu);
-	
-	if (cur_max >= pcpu->policy->max)
-		max_freq = pcpu->policy->max;
-	else
-		max_freq = cur_max;	
-    
+
+	max_freq = cur_max >= pcpu->policy->max ? pcpu->policy->max : cur_max;
+
 	/* Lets divide by up_threshold so that the device uses more freqs */
 	new_freq = max_freq * cpu_load / scale_up_threshold();
 
