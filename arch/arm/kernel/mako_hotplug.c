@@ -44,6 +44,8 @@ static bool core_boost[4];
 static short first_counter = 0;
 static short third_counter = 0;
 
+unsigned int get_boostpulse_duration_val(void);
+
 static void __cpuinit online_core(unsigned short cpus_num)
 {
 	unsigned int cpu;
@@ -218,8 +220,16 @@ static void __cpuinit decide_hotplug_func(struct work_struct *work)
 	pr_info("Up count:\t%d\n",first_counter);
 	pr_info("Dw count:\t%d\n",third_counter);*/
 	
-
-	/*for_each_possible_cpu(cpu_debug)
+	/*if (gpu_idle)
+		pr_info("Gpu Idle: true");
+	else
+		pr_info("Gpu Idle: false");
+	if (is_touching)
+		pr_info("Touch: true");
+	else
+		pr_info("Touch: false");
+		
+	for_each_possible_cpu(cpu_debug)
     {
     	if (cpu_online(cpu_debug))
     	{
@@ -273,8 +283,8 @@ static void __cpuinit mako_hotplug_late_resume(struct early_suspend *handler)
 
 	/* touchboost */
 
-	freq_boosted_time = time_stamp = ktime_to_ms(ktime_get());
-	is_touching = true;
+	time_stamp = ktime_to_ms(ktime_get());
+	boostpulse_endtime = ktime_to_us(ktime_get()) + get_boostpulse_duration_val();
 	
 	touchboost_func();
 	
