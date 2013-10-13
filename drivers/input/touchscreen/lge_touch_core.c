@@ -53,10 +53,10 @@ static int is_width_minor;
 
 /* extern vars */
 bool is_touching;
-u64 freq_boosted_time;
 unsigned long time_stamp;
 
 void touchboost_func(void);
+unsigned int get_boostpulse_duration_val(void);
 
 bool suspended = false;
 
@@ -841,7 +841,10 @@ static void __cpuinit touch_work_func(struct work_struct *work)
 	}
 
     is_touching = true;
-	freq_boosted_time = time_stamp = ktime_to_ms(ktime_get());
+    idle_counter = -10;
+    gpu_idle = false;
+	time_stamp = ktime_to_ms(ktime_get());
+	boostpulse_endtime = ktime_to_us(ktime_get()) + get_boostpulse_duration_val();
     
 	if (suspended && doubletap_to_wake)
 	{

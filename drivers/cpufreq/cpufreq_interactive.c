@@ -85,7 +85,7 @@ static unsigned int interactive_val[GPU_STATE][ACTIVE_CORES][TUNABLES] =
 }};
 
 /* Hi speed to bump to from lo speed when load burst (default max) */
-static unsigned int hispeed_freq = 1242000;
+static unsigned int hispeed_freq = 1512000;
 
 /* Go to hi speed when CPU load at or above this value. */
 #define DEFAULT_GO_HISPEED_LOAD 95
@@ -126,7 +126,7 @@ static int nabove_hispeed_delay = ARRAY_SIZE(default_above_hispeed_delay);
 /* Duration of a boot pulse in usecs */
 static int boostpulse_duration_val = DEFAULT_BOOSTPULSE_DURATION;
 /* End time of boost pulse in ktime converted to usecs */
-static u64 boostpulse_endtime;
+u64 boostpulse_endtime;
 
 /*
  * Max additional time to wait in idle, beyond timer_rate, at speeds above
@@ -434,18 +434,22 @@ static void cpufreq_interactive_timer(unsigned long data)
 	do_div(cputime_speedadj, delta_time);
 	loadadjfreq = (unsigned int)cputime_speedadj * 100;
 	cpu_load = loadadjfreq / pcpu->target_freq;
-	is_touching = now < boostpulse_endtime;
+	is_touching = ktime_to_us(ktime_get()) < boostpulse_endtime;
 
-	if (cpu_load >= go_hispeed_load && !gpu_idle) {
+	if (cpu_load >= go_hispeed_load) {
 		new_freq = choose_freq(pcpu, loadadjfreq);
 
-		if (new_freq < hispeed_freq)
+		if (new_freq < hispeed_freq && !gpu_idle)
 			new_freq = hispeed_freq;
-	} else if (is_touching && !gpu_idle 
-			&& get_core_boost(pcpu->policy->cpu)) {
-		new_freq = input_boost_freq;	
 	} else {
 		new_freq = choose_freq(pcpu, loadadjfreq);
+	}
+	
+	if (is_touching && !gpu_idle 
+			&& get_core_boost(pcpu->policy->cpu)) {
+			
+		if (new_freq < input_boost_freq)
+			new_freq = input_boost_freq;	
 	}
 
 	if (pcpu->target_freq >= hispeed_freq &&
@@ -1119,9 +1123,14 @@ unsigned int scale_timer_rate(void)
 		return timer_rate;
 }
 
-unsigned int get_input_boost_freq()
+unsigned int get_input_boost_freq(void)
 {
 	return input_boost_freq;
+}
+
+unsigned int get_boostpulse_duration_val(void)
+{
+	return boostpulse_duration_val;
 }
 
 static int cpufreq_interactive_idle_notifier(struct notifier_block *nb,
