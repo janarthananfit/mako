@@ -264,7 +264,6 @@ static void __cpuinit mako_hotplug_early_suspend(struct early_suspend *handler)
 			core_boost[cpu] = false;
 			cpu_down(cpu);
 		}
-		
 	}
 	
 	is_touching = false;
@@ -282,9 +281,13 @@ static void __cpuinit mako_hotplug_late_resume(struct early_suspend *handler)
 	msm_cpufreq_set_freq_limits(0, MSM_CPUFREQ_NO_LIMIT, MSM_CPUFREQ_NO_LIMIT);
 
 	/* touchboost */
-
+	
+	is_touching = true;
+    idle_counter = -10;
+    gpu_idle = false;
+    
+    boostpulse_endtime = ktime_to_us(ktime_get()) + get_boostpulse_duration_val();
 	time_stamp = ktime_to_ms(ktime_get());
-	boostpulse_endtime = ktime_to_us(ktime_get()) + get_boostpulse_duration_val();
 	
 	touchboost_func();
 	
